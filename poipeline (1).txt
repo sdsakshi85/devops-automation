@@ -1,0 +1,454 @@
+setaq1
+pipeline {
+    agent { label 'builtinubuntu' }
+
+   tools {
+    maven 'mvn 3.9.11'
+    jdk 'ORACLEJDK21'
+}
+
+
+    stages {
+        stage('fetch code') {
+            steps {
+                // Update the URL and branch below
+                git branch: 'main', url: 'https://github.com/hkhcoder/vprofile-project.git'
+            }
+        }
+
+        stage('unit test') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+
+        stage('build the code') {
+            steps {
+                sh 'mvn package -DskipTests'
+            }
+        }
+
+        stage('archive the artifact') {
+            steps {
+                archiveArtifacts artifacts: '**/*.war'
+            }
+        }
+
+        stage('deploy to staging') {
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
+            steps {
+                echo 'Deploying artifact to staging server.'
+            }
+        }
+    }
+
+    post {
+        failure {
+            sh "echo 'Build failed. Notifying the development team.'"
+        }
+    }
+}
+
+----------------------------------------------------------------
+setaq2
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = 'my-node-app'
+        CONTAINER_NAME = 'nodeserver'
+        GIT_REPO = 'https://github.com/ajay-raut/spnodeserver.git'
+        GIT_BRANCH = 'main'
+        DEV_EMAIL = 'yuvrajsoman25@gmail.com'
+    }
+
+    stages {
+        stage('Fetch Code') {
+            steps {
+                git branch: "${GIT_BRANCH}", url: "${GIT_REPO}"
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    sh "docker build -t ${IMAGE_NAME} ."
+                }
+            }
+        }
+
+        stage('Run Docker Container') {
+            steps {
+                script {
+                    sh "docker run -d --name ${CONTAINER_NAME} -p 5000:5000 ${IMAGE_NAME}"
+                    sleep 10
+                    sh "docker ps"
+                    sh "docker stop ${CONTAINER_NAME}"
+                    sh "docker rm ${CONTAINER_NAME}"
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            emailext (
+                subject: "Jenkins Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """Build failed for job: ${env.JOB_NAME}
+                         Build number: ${env.BUILD_NUMBER}
+                         Check console output at: ${env.BUILD_URL}""",
+                to: "${DEV_EMAIL}"
+            )
+        }
+    }
+}
+
+----------------------------------------------------------
+setaq3
+pipeline {
+    agent any
+
+    environment {
+        GIT_REPO = 'https://github.com/ajay-raut/spnodeserver.git'
+        GIT_BRANCH = 'main'
+        DOCKERHUB_CREDENTIALS = 'dockerhub-creds'   // Jenkins credential ID for Docker Hub
+        DOCKER_IMAGE = 'yuvi25/node-app'            // Your Docker Hub repo
+        CONTAINER_NAME = 'my-node-app-container'
+    }
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                git branch: "${GIT_BRANCH}", url: "${GIT_REPO}"
+            }
+        }
+
+        stage('Docker Login') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: "${DOCKERHUB_CREDENTIALS}",
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh "docker build -t ${DOCKER_IMAGE} ."
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                sh "docker push ${DOCKER_IMAGE}"
+            }
+        }
+
+        stage('Run Container (optional)') {
+            steps {
+                sh """
+                    docker rm -f ${CONTAINER_NAME} || true
+                    docker run -d --name ${CONTAINER_NAME} -p 5000:5000 ${DOCKER_IMAGE}
+                    sleep 10
+                    docker ps
+                """
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Cleaning up...'
+            sh 'docker stop my-node-app-container || true'
+            sh 'docker rm my-node-app-container || true'
+            sh 'docker logout || true'
+        }
+        failure {
+            echo 'Pipeline failed. Consider setting up email notifications.'
+        }
+    }
+}
+
+------------------------------------------------------------------
+setaq4
+pipeline {
+    agent any
+
+    tools {
+        maven 'Maven-3.9.10'        // Jenkins tool name for Maven
+        jdk 'ORACLEJDK21'           // Jenkins tool name for Oracle JDK 21 (already installed)
+    }
+
+    environment {
+        VERSIONS_DIR = 'versions'
+        WAR_SOURCE = 'target/vprofile-v2.war'
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/hkhcoder/vprofile-project.git'
+            }
+        }
+
+        stage('Build with Maven') {
+            steps {
+                sh 'mvn clean package -DskipTests'
+            }
+        }
+
+        stage('Create Versions Directory') {
+            steps {
+                script {
+                    if (!fileExists(env.VERSIONS_DIR)) {
+                        sh "mkdir ${env.VERSIONS_DIR}"
+                    }
+                }
+            }
+        }
+
+        stage('Copy WAR File') {
+            steps {
+                script {
+                    def timestamp = new Date().format("yyyyMMdd-HHmmss")
+                    def warDest = "${env.VERSIONS_DIR}/vprofile-v2-${timestamp}.war"
+                    sh "cp ${env.WAR_SOURCE} ${warDest}"
+                    echo "WAR copied to ${warDest}"
+                }
+            }
+        }
+
+        stage('Run Unit Tests') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ Pipeline completed successfully!'
+        }
+        failure {
+            echo '❌ Pipeline failed. Check logs for details.'
+        }
+    }
+}
+
+---------------------------------------
+setbq1
+pipeline {
+    agent { label 'builtinubuntu' }
+
+    tools {
+        maven 'Maven-3.9.10'
+        jdk 'ORACLEJDK21'
+    }
+
+    environment {
+        REPO_URL = 'https://github.com/hkhcoder/vprofile-project.git'
+        BRANCH = 'main'
+        VERSIONS_DIR = 'versions'
+        WAR_SOURCE = 'target/vprofile-v2.war'
+        SLACK_CHANNEL = '#jenkinsserver'
+    }
+
+    stages {
+        stage('Fetch Code') {
+            steps {
+                git branch: "${env.BRANCH}", url: "${env.REPO_URL}"
+            }
+        }
+
+        stage('Build Code') {
+            steps {
+                sh 'mvn clean package -DskipTests'
+
+                script {
+                    if (!fileExists(env.VERSIONS_DIR)) {
+                        sh "mkdir ${env.VERSIONS_DIR}"
+                    }
+
+                    def timestamp = new Date().format("yyyyMMdd-HHmmss")
+                    def warDest = "${env.VERSIONS_DIR}/vprofile-v2-${timestamp}.war"
+                    sh "cp ${env.WAR_SOURCE} ${warDest}"
+                    echo "WAR copied to ${warDest}"
+                }
+            }
+        }
+
+        stage('Run Unit Tests') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                def colorCode = ''
+                def buildStatus = currentBuild.currentResult
+
+                if (buildStatus == 'SUCCESS') {
+                    colorCode = '#36a64f' // green
+                } else if (buildStatus == 'FAILURE') {
+                    colorCode = '#FF0000' // red
+                } else {
+                    colorCode = '#FFFF00' // yellow
+                }
+
+                slackSend(
+                    channel: "${env.SLACK_CHANNEL}",
+                    color: colorCode,
+                    message: "*Build Result:* ${buildStatus} \n*Job:* ${env.JOB_NAME} \n*Build:* #${env.BUILD_NUMBER} \n*URL:* ${env.BUILD_URL}"
+                )
+            }
+        }
+    }
+}
+
+-------------------------------------------------------
+stbq2
+pipeline {
+    agent { label 'builtinubuntu' }
+
+    environment {
+        IMAGE_NAME = 'yuvi25/spnodeserver' // Replace with your Docker Hub repo
+    }
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                git branch: 'main', url: 'https://github.com/ajay-raut/spnodeserver.git'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DOCKER_USERNAME',
+                    passwordVariable: 'DOCKER_PASSWORD'
+                )]) {
+                    script {
+                        sh "echo \$DOCKER_PASSWORD | docker login -u \$DOCKER_USERNAME --password-stdin"
+
+                        // Build image with :latest tag
+                        sh "docker build -t ${env.IMAGE_NAME}:latest ."
+
+                        // Tag image with build number
+                        sh "docker tag ${env.IMAGE_NAME}:latest ${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
+                    }
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    // Push both tags
+                    sh "docker push ${env.IMAGE_NAME}:latest"
+                    sh "docker push ${env.IMAGE_NAME}:${env.BUILD_NUMBER}"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Docker image built and pushed successfully!"
+        }
+        failure {
+            echo "❌ Build or push failed. Check logs."
+        }
+        always {
+            // Optional cleanup
+            sh 'docker logout || true'
+        }
+    }
+}
+
+-----------------------------------------------------------------
+setbq3
+pipeline {
+    agent { label 'builtinubuntu' }
+
+    tools {
+        maven 'mvn 3.9.11'           // Updated Maven version
+        jdk 'ORACLEJDK21'        // Updated JDK to Oracle JDK 21
+    }
+
+    stages {
+        stage('Fetch code') {
+            steps {
+                git branch: 'atom', url: 'https://github.com/hkhcoder/vprofile-project.git'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'mvn install -DskipTests'
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'target/*.war', fingerprint: true
+                }
+            }
+        }
+
+        stage('Unit Test') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+
+        stage('Checkstyle Analysis') {
+            steps {
+                sh 'mvn checkstyle:checkstyle'
+                archiveArtifacts 'target/checkstyle-result.xml'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonarserver') {
+                    sh '''
+                    mvn sonar:sonar \
+                      -Dsonar.projectKey=jenkins \
+                      -Dsonar.sources=src/ \
+                      -Dsonar.java.binaries=target/test-classes/com/visualpathit/account/controllerTest/ \
+                      -Dsonar.junit.reportPaths=target/surefire-reports/ \
+                      -Dsonar.jacoco.reportPaths=target/jacoco.exec \
+                      -Dsonar.checkstyle.reportPaths=target/checkstyle-result.xml
+                    '''
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'Pipeline failed!'
+        }
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+    }
+}
+
+------------------------------------------------------
+
