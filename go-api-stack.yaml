@@ -1,0 +1,54 @@
+# 1. The Go API Deployment - This will be in the 'database-stack' namespace
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-api-deployment
+  namespace: database-stack # <-- Deploys to the same namespace as postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-api
+  template:
+    metadata:
+      labels:
+        app: go-api
+    spec:
+      containers:
+        - name: go-api-container
+          image: ajay25/go-gin-api:cors # <-- Your application image
+          ports:
+            - containerPort: 8080 # <-- IMPORTANT: Assumes your Go app listens on port 8080
+          env:
+            # These variables connect your Go app to the existing Postgres service
+            - name: DB_HOST
+              value: "<postgres-service ClusterIP>" # <-- ClusterIP of postgres service
+            - name: DB_PORT
+              value: "5432" # <-- The port your postgres service is running on
+            - name: DB_USER
+              value: "postgres" # <-- The user you defined in your postgres-deployment
+            - name: DB_NAME
+              value: "postgres" # <-- The default DB created by the postgres image
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret # <-- The secret you already created
+                  key: POSTGRES_PASSWORD
+
+---
+
+# 2. The Go API Service - This will be in the 'database-stack' namespace
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-api-service
+  namespace: database-stack # <-- Deploys to the same namespace
+spec:
+  type: NodePort # <-- Exposes the service outside the cluster
+  selector:
+    app: go-api # <-- Matches the labels in your go-api-deployment
+  ports:
+    - protocol: TCP
+      port: 8080 # <-- Port the service is available on *inside* the cluster
+      targetPort: 8080 # <-- Must match the containerPort from the deployment
+      nodePort: 30008 # You can optionally specify a port (different from Adminer)
